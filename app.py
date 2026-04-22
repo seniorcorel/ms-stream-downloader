@@ -593,7 +593,10 @@ def download_file(download_id):
     info = downloads.get(download_id)
     if not info or info["status"] != "done":
         return jsonify({"error": "Archivo no disponible"}), 404
-    return send_from_directory(DOWNLOADS_DIR, info["filename"], as_attachment=True)
+    filepath = os.path.join(DOWNLOADS_DIR, info["filename"])
+    if not os.path.isfile(filepath):
+        return jsonify({"error": "Archivo no encontrado en disco"}), 404
+    return send_from_directory(DOWNLOADS_DIR, info["filename"], as_attachment=True, download_name="video.mp4")
 
 
 if __name__ == "__main__":

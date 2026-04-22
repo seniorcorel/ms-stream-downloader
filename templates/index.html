@@ -274,6 +274,7 @@ async function startDownload() {
                 status.textContent = '✓ Completado';
                 status.className = 'status-done';
                 link.href = `/api/file/${data.id}`;
+                link.setAttribute('download', 'video.mp4');
                 link.style.display = 'block';
                 evtSource.close();
                 btn.disabled = false;
