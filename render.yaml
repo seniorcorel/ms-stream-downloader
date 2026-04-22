@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: ms-stream-downloader
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
