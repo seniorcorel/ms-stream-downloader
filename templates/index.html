@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MS Stream Downloader</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f0f1a;
+            color: #e0e0e0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 40px 20px;
+        }
+        .container {
+            width: 100%;
+            max-width: 680px;
+        }
+        h1 {
+            font-size: 1.6rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #fff;
+        }
+        .subtitle {
+            color: #888;
+            font-size: 0.9rem;
+            margin-bottom: 32px;
+        }
+        .card {
+            background: #1a1a2e;
+            border: 1px solid #2a2a40;
+            border-radius: 12px;
+            padding: 28px;
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            font-size: 0.85rem;
+            color: #aaa;
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+        textarea, select {
+            width: 100%;
+            background: #12121f;
+            border: 1px solid #333;
+            border-radius: 8px;
+            color: #e0e0e0;
+            padding: 12px;
+            font-size: 0.9rem;
+            font-family: inherit;
+            resize: vertical;
+            transition: border-color 0.2s;
+        }
+        textarea:focus, select:focus {
+            outline: none;
+            border-color: #6c5ce7;
+        }
+        textarea { min-height: 100px; }
+        select {
+            cursor: pointer;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23888' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            padding-right: 36px;
+        }
+        .field { margin-bottom: 18px; }
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: #6c5ce7;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+        }
+        .btn:hover { background: #5a4bd1; }
+        .btn:active { transform: scale(0.98); }
+        .btn:disabled {
+            background: #3a3a50;
+            cursor: not-allowed;
+            color: #666;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: #2a2a40;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-bottom: 14px;
+        }
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #6c5ce7, #a29bfe);
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+        .log {
+            background: #12121f;
+            border: 1px solid #2a2a40;
+            border-radius: 8px;
+            padding: 12px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.78rem;
+            color: #8a8a9a;
+            max-height: 220px;
+            overflow-y: auto;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .log::-webkit-scrollbar { width: 6px; }
+        .log::-webkit-scrollbar-track { background: transparent; }
+        .log::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+        .status-done { color: #00b894; }
+        .status-error { color: #e17055; }
+        .btn-secondary {
+            padding: 8px 16px;
+            background: #2a2a40;
+            color: #ccc;
+            border: 1px solid #444;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: background 0.2s;
+            white-space: nowrap;
+        }
+        .btn-secondary:hover { background: #3a3a55; }
+        .cookies-ok { color: #00b894; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📹 MS Stream Downloader</h1>
+        <p class="subtitle">Descarga videos de Microsoft Stream / SharePoint</p>
+
+        <div class="card">
+            <div class="field">
+                <label for="url">Video Manifest URL</label>
+                <textarea id="url" placeholder="https://...mediap.svc.ms/transform/videomanifest?..."></textarea>
+                <p style="font-size:0.75rem; color:#666; margin-top:6px;">
+                    F12 → Network → filtrar "videomanifest" → click derecho → Copy URL
+                </p>
+            </div>
+            <div class="field">
+                <label for="token">x-spopactoken</label>
+                <textarea id="token" style="min-height:50px;" placeholder="v1.eyJzaXRlaWQi..."></textarea>
+                <p style="font-size:0.75rem; color:#666; margin-top:6px;">
+                    Misma request en DevTools → Headers → Request Headers → copiar valor de "x-spopactoken"
+                </p>
+            </div>
+            <div class="field">
+                <label for="quality">Calidad</label>
+                <select id="quality">
+                    <option value="best">Mejor disponible</option>
+                    <option value="1080p">1080p</option>
+                    <option value="720p">720p</option>
+                    <option value="480p">480p</option>
+                    <option value="360p">360p</option>
+                    <option value="worst">Más baja</option>
+                </select>
+            </div>
+            <div class="field">
+                <label>Cookies.txt (necesario para descargar los segmentos)</label>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <input type="file" id="cookies" accept=".txt" style="display:none;" onchange="uploadCookies(this)">
+                    <button type="button" class="btn-secondary" onclick="document.getElementById('cookies').click()">Seleccionar cookies.txt</button>
+                    <span id="cookiesStatus" style="font-size:0.8rem; color:#888;">Sin archivo</span>
+                </div>
+                <p style="font-size:0.75rem; color:#666; margin-top:6px;">
+                    Extensión <a href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc" target="_blank" style="color:#6c5ce7;">Get cookies.txt</a> → exportar desde la página del video. Las cookies duran más que el token.
+                </p>
+            </div>
+            <button class="btn" id="downloadBtn" onclick="startDownload()">Descargar Video</button>
+        </div>
+        </div>
+
+        <div class="card" id="progressCard" style="display:none;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <label style="margin:0;" id="statusLabel">Preparando...</label>
+                <span id="pctLabel" style="font-size:0.85rem; color:#6c5ce7; font-weight:600;">0%</span>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="log" id="log"></div>
+            <a id="downloadLink" class="btn" style="display:none; text-align:center; text-decoration:none; margin-top:14px;">
+                Descargar archivo
+            </a>
+        </div>
+    </div>
+
+<script>
+let cookiesId = '';
+
+async function uploadCookies(input) {
+    const file = input.files[0];
+    const statusEl = document.getElementById('cookiesStatus');
+    if (!file) return;
+    statusEl.textContent = 'Subiendo...';
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+        const res = await fetch('/api/upload-cookies', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.cookies_id) {
+            cookiesId = data.cookies_id;
+            statusEl.textContent = '✓ ' + file.name;
+            statusEl.className = 'cookies-ok';
+        } else {
+            statusEl.textContent = 'Error';
+        }
+    } catch (e) {
+        statusEl.textContent = 'Error';
+    }
+}
+
+async function startDownload() {
+    const url = document.getElementById('url').value.trim();
+    if (!url) { alert('Pega la URL del videomanifest'); return; }
+
+    const token = document.getElementById('token').value.trim();
+    const quality = document.getElementById('quality').value;
+    const btn = document.getElementById('downloadBtn');
+    const card = document.getElementById('progressCard');
+    const log = document.getElementById('log');
+    const fill = document.getElementById('progressFill');
+    const pct = document.getElementById('pctLabel');
+    const status = document.getElementById('statusLabel');
+    const link = document.getElementById('downloadLink');
+
+    btn.disabled = true;
+    card.style.display = 'block';
+    log.textContent = '';
+    fill.style.width = '0%';
+    pct.textContent = '0%';
+    status.textContent = 'Analizando video...';
+    status.className = '';
+    link.style.display = 'none';
+
+    try {
+        const res = await fetch('/api/download', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, quality, token, cookies_id: cookiesId })
+        });
+        const data = await res.json();
+        if (data.error) { throw new Error(data.error); }
+
+        const evtSource = new EventSource(`/api/progress/${data.id}`);
+        evtSource.onmessage = (e) => {
+            const d = JSON.parse(e.data);
+            if (d.error) { evtSource.close(); btn.disabled = false; return; }
+
+            if (d.logs) d.logs.forEach(l => { log.textContent += l + '\n'; });
+            log.scrollTop = log.scrollHeight;
+
+            const p = Math.round(d.progress);
+            fill.style.width = p + '%';
+            pct.textContent = p + '%';
+
+            if (d.status === 'downloading' && p > 0) status.textContent = 'Descargando...';
+            if (d.status === 'done') {
+                status.textContent = '✓ Completado';
+                status.className = 'status-done';
+                link.href = `/api/file/${data.id}`;
+                link.style.display = 'block';
+                evtSource.close();
+                btn.disabled = false;
+            }
+            if (d.status === 'error') {
+                status.textContent = '✗ Error — revisa el log';
+                status.className = 'status-error';
+                evtSource.close();
+                btn.disabled = false;
+            }
+        };
+        evtSource.onerror = () => { evtSource.close(); btn.disabled = false; };
+    } catch (err) {
+        status.textContent = 'Error: ' + err.message;
+        status.className = 'status-error';
+        btn.disabled = false;
+    }
+}
+</script>
+</body>
+</html>

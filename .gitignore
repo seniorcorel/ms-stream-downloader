@@ -1,0 +1,10 @@
+ffmpeg.zip
+ffmpeg_extracted/
+downloads/
+cookies/
+__pycache__/
+*.pyc
+*.tmp
+*.dec
+stream_downloader.py
+.kiro/
