@@ -54,33 +54,99 @@ def clean_manifest_url(url):
     return url
 
 
-def create_session(token=None, cookies_path=None):
-    """Crea una requests.Session con token y/o cookies."""
-    session = requests.Session()
+class DynamicOriginSession(requests.Session):
+    """Session que ajusta Origin/Referer automáticamente al dominio de cada request,
+    o usa un origin fijo si se configuró."""
+
+    def __init__(self, fixed_origin=None):
+        super().__init__()
+        self.fixed_origin = fixed_origin
+
+    def request(self, method, url, **kwargs):
+        if self.fixed_origin:
+            origin = self.fixed_origin.rstrip("/")
+        else:
+            parsed = urlparse(url)
+            origin = f"{parsed.scheme}://{parsed.hostname}"
+        self.headers["Origin"] = origin
+        self.headers["Referer"] = origin + "/"
+        return super().request(method, url, **kwargs)
+
+
+def parse_raw_cookies(cookie_string, domain):
+    """Parsea un string de cookies raw (Cookie: header del navegador) y devuelve un dict."""
+    cookies = {}
+    if not cookie_string:
+        return cookies
+    # Limpiar prefijo "Cookie: " si lo pegaron
+    cookie_string = cookie_string.strip()
+    if cookie_string.lower().startswith("cookie:"):
+        cookie_string = cookie_string[len("cookie:"):].strip()
+    for pair in cookie_string.split(";"):
+        pair = pair.strip()
+        if "=" in pair:
+            name, value = pair.split("=", 1)
+            cookies[name.strip()] = value.strip()
+    return cookies
+
+
+def create_session(token=None, cookies_path=None, origin_override=None, raw_cookies=None, referer=None):
+    """Crea una session agnóstica.
+    - token: solo se usa para el manifest (x-spopactoken)
+    - cookies: se usan para todo (especialmente segmentos)
+    - raw_cookies: string de cookies pegado del navegador
+    """
+    session = DynamicOriginSession(fixed_origin=origin_override or None)
     session.verify = False
+
     session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
         "Accept": "*/*",
-        "Origin": "https://coralracing-my.sharepoint.com",
-        "Referer": "https://coralracing-my.sharepoint.com/",
         "sec-fetch-dest": "empty",
         "sec-fetch-mode": "cors",
-        "sec-fetch-site": "cross-site",
+        "sec-fetch-site": "same-origin",
     })
+    if referer:
+        session.headers["Referer"] = referer
     if token:
         token = token.strip()
-        # Soportar tanto Bearer como x-spopactoken
         if token.lower().startswith("bearer "):
             session.headers["Authorization"] = token
+            session.headers["x-spopactoken"] = token[len("Bearer "):].strip()
         else:
             session.headers["x-spopactoken"] = token
+
+    # Recopilar cookies de todas las fuentes
+    all_cookies = {}
+
+    # Detectar dominio del sharepoint para filtrar cookies
+    sp_domains = set()
+    if origin_override:
+        sp_domains.add(urlparse(origin_override).hostname)
+
+    # 1. Desde archivo cookies.txt (MozillaCookieJar) — solo cookies de SharePoint
     if cookies_path and os.path.isfile(cookies_path):
         try:
             jar = MozillaCookieJar(cookies_path)
             jar.load(ignore_discard=True, ignore_expires=True)
-            session.cookies = jar
+            for cookie in jar:
+                domain = cookie.domain.lstrip(".")
+                # Solo cookies de sharepoint o del dominio target
+                if "sharepoint.com" in domain or "office.com" in domain or "microsoftonline.com" in domain or \
+                   any(domain.endswith(sp) or sp.endswith(domain) for sp in sp_domains):
+                    all_cookies[cookie.name] = cookie.value
         except Exception:
             pass
+
+    # 2. Desde raw cookies (prioridad sobre archivo — se asume que son del dominio correcto)
+    if raw_cookies:
+        parsed = parse_raw_cookies(raw_cookies, "")
+        all_cookies.update(parsed)
+
+    # Setear cookies sin restricciones de dominio/path
+    for name, value in all_cookies.items():
+        session.cookies.set(name, value)
+
     return session
 
 
@@ -276,13 +342,32 @@ def download_representation(session, rep, base_url, dest_path, info, label, decr
             retries = 0
             for i, seg_url in enumerate(segments):
                 full_url = urljoin(effective_base, seg_url)
+
+                # Log detallado del primer segmento
+                if i == 0:
+                    seg_domain = urlparse(full_url).hostname
+                    info["log"].append(f"  Dominio segmentos: {seg_domain}")
+                    # Verificar qué cookies se mandan realmente
+                    from requests.utils import dict_from_cookiejar
+                    prep = requests.Request("GET", full_url, headers=session.headers, cookies=session.cookies).prepare()
+                    info["log"].append(f"  Cookie header enviado: {prep.headers.get('Cookie', 'NINGUNA')[:200]}...")
+
                 r = session.get(full_url, timeout=30)
+
+                # On error, log details for first few segments
+                if r.status_code != 200 and i < 3:
+                    error_body = ""
+                    try:
+                        error_body = r.json().get("error", {}).get("message", r.text[:200])
+                    except Exception:
+                        error_body = r.text[:200]
+                    info["log"].append(f"  Segmento {i+1}: HTTP {r.status_code} - {error_body}")
                 
-                # On 401, the x-spopactoken likely expired. Remove it and retry with just cookies/URL tokens
+                # On 401, try without token headers (URL might have its own auth params)
                 if r.status_code == 401:
-                    if "x-spopactoken" in session.headers:
-                        info["log"].append(f"  Token expirado en segmento {i+1}, continuando sin token...")
-                        del session.headers["x-spopactoken"]
+                    if "x-spopactoken" in session.headers or "Authorization" in session.headers:
+                        info["log"].append(f"  Auth rechazada en segmento {i+1}, reintentando sin token...")
+                        session.headers.pop("x-spopactoken", None)
                         session.headers.pop("Authorization", None)
                         r = session.get(full_url, timeout=60)
                     
@@ -291,6 +376,8 @@ def download_representation(session, rep, base_url, dest_path, info, label, decr
                         info["log"].append(f"  Reintentando segmento {i+1} ({retries}/2)...")
                         time.sleep(1)
                         r = session.get(full_url, timeout=60)
+                        if r.status_code != 200:
+                            info["log"].append(f"  Reintento {retries}: HTTP {r.status_code}")
 
                 # On 409 Conflict or 429 Too Many Requests, wait and retry
                 if r.status_code in (409, 429, 503):
@@ -382,7 +469,7 @@ def merge_av(video_path, audio_path, output_path, info):
     return True
 
 
-def run_download(download_id, manifest_url, quality, token=None, cookies_path=None):
+def run_download(download_id, manifest_url, quality, token=None, cookies_path=None, origin_override=None, raw_cookies=None, referer=None):
     """Descarga: fetch manifest → parse DASH → download streams → merge."""
     info = downloads[download_id]
     filename = f"{download_id}.mp4"
@@ -396,8 +483,16 @@ def run_download(download_id, manifest_url, quality, token=None, cookies_path=No
         info["log"].append(f"Token: {'sí' if token else 'no'}")
         info["log"].append(f"Cookies: {'sí' if cookies_path else 'no'}")
 
-        session = create_session(token, cookies_path)
+        session = create_session(token, cookies_path, origin_override, raw_cookies, referer)
         info["log"].append(f"Cookies en sesión: {len(session.cookies)}")
+        if origin_override:
+            info["log"].append(f"Origin override: {origin_override}")
+        if raw_cookies:
+            info["log"].append(f"Raw cookies: sí ({len(parse_raw_cookies(raw_cookies, ''))} cookies)")
+
+        # Detectar dominio del manifest
+        manifest_domain = urlparse(manifest_url).hostname
+        info["log"].append(f"Dominio manifest: {manifest_domain}")
 
         # 1. Descargar manifest — usar URL completa tal cual
         info["log"].append("Descargando manifest DASH...")
@@ -479,6 +574,18 @@ def run_download(download_id, manifest_url, quality, token=None, cookies_path=No
             else:
                 info["log"].append(f"Clave no disponible: HTTP {key_r.status_code}, descargando sin descifrar")
 
+        # Quitar tokens para los segmentos — solo se autentican con cookies
+        session.headers.pop("x-spopactoken", None)
+        session.headers.pop("Authorization", None)
+        # Verificar que las cookies de auth están presentes
+        cookie_names = [c.name for c in session.cookies]
+        has_fedauth = "FedAuth" in cookie_names
+        has_rtfa = "rtFa" in cookie_names
+        info["log"].append(f"Cookies auth: FedAuth={'sí' if has_fedauth else 'NO'}, rtFa={'sí' if has_rtfa else 'NO'}")
+        if not has_fedauth:
+            info["log"].append("⚠ Falta FedAuth — probá pegando las cookies raw del navegador")
+        info["log"].append("Auth segmentos: solo cookies (sin token)")
+
         if audio_rep:
             video_tmp = dest + ".v.tmp"
             audio_tmp = dest + ".a.tmp"
@@ -545,6 +652,9 @@ def start_download():
     quality = data.get("quality", "best")
     token = data.get("token", "").strip()
     cookies_id = data.get("cookies_id", "").strip()
+    origin_override = data.get("origin", "").strip()
+    raw_cookies = data.get("raw_cookies", "").strip()
+    referer = data.get("referer", "").strip()
 
     if not url:
         return jsonify({"error": "URL requerida"}), 400
@@ -564,7 +674,9 @@ def start_download():
     }
 
     thread = threading.Thread(
-        target=run_download, args=(download_id, url, quality, token or None, cookies_path), daemon=True
+        target=run_download,
+        args=(download_id, url, quality, token or None, cookies_path, origin_override or None, raw_cookies or None, referer or None),
+        daemon=True,
     )
     thread.start()
     return jsonify({"id": download_id})

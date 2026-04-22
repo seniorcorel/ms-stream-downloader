@@ -153,10 +153,24 @@
                 </p>
             </div>
             <div class="field">
-                <label for="token">x-spopactoken</label>
-                <textarea id="token" style="min-height:50px;" placeholder="v1.eyJzaXRlaWQi..."></textarea>
+                <label for="token">Token (para el manifest)</label>
+                <textarea id="token" style="min-height:50px;" placeholder="v1.eyJzaXRlaWQi...  o  Bearer eyJ0eXAi..."></textarea>
                 <p style="font-size:0.75rem; color:#666; margin-top:6px;">
-                    Misma request en DevTools → Headers → Request Headers → copiar valor de "x-spopactoken"
+                    DevTools → Network → request "videomanifest" → Headers → copiar "x-spopactoken" o "Authorization"
+                </p>
+            </div>
+            <div class="field">
+                <label for="rawCookies">🍪 Cookies (para los segmentos — IMPORTANTE)</label>
+                <textarea id="rawCookies" style="min-height:60px;" placeholder="SIMI=eyJ...; rtFa=ffctA...; FedAuth=77u/PD94bWw...; isso=VHJ1ZQ..."></textarea>
+                <p style="font-size:0.75rem; color:#666; margin-top:6px;">
+                    Misma request de segmento en DevTools → Headers → Request Headers → copiar el valor completo del header "cookie"
+                </p>
+            </div>
+            <div class="field">
+                <label for="origin">Origin (opcional)</label>
+                <input type="text" id="origin" style="width:100%; background:#12121f; border:1px solid #333; border-radius:8px; color:#e0e0e0; padding:12px; font-size:0.9rem;" placeholder="https://tenant-my.sharepoint.com">
+                <p style="font-size:0.75rem; color:#666; margin-top:6px;">
+                    Se detecta automáticamente. Solo completar si falla.
                 </p>
             </div>
             <div class="field">
@@ -231,6 +245,8 @@ async function startDownload() {
 
     const token = document.getElementById('token').value.trim();
     const quality = document.getElementById('quality').value;
+    const origin = document.getElementById('origin').value.trim();
+    const rawCookies = document.getElementById('rawCookies').value.trim();
     const btn = document.getElementById('downloadBtn');
     const card = document.getElementById('progressCard');
     const log = document.getElementById('log');
@@ -252,7 +268,7 @@ async function startDownload() {
         const res = await fetch('/api/download', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url, quality, token, cookies_id: cookiesId })
+            body: JSON.stringify({ url, quality, token, cookies_id: cookiesId, origin, raw_cookies: rawCookies })
         });
         const data = await res.json();
         if (data.error) { throw new Error(data.error); }
