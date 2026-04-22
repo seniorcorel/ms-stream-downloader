@@ -54,19 +54,24 @@ def clean_manifest_url(url):
     return url
 
 
-def create_session(token=None, cookies_path=None):
-    """Crea una requests.Session con token y/o cookies."""
+def create_session(token=None, cookies_path=None, manifest_url=None):
+    """Crea una requests.Session con token y/o cookies. Extrae Origin/Referer de la URL."""
     session = requests.Session()
     session.verify = False
     session.headers.update({
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0",
         "Accept": "*/*",
-        "Origin": "https://coralracing-my.sharepoint.com",
-        "Referer": "https://coralracing-my.sharepoint.com/",
         "sec-fetch-dest": "empty",
         "sec-fetch-mode": "cors",
         "sec-fetch-site": "cross-site",
     })
+    # Extraer dominio de SharePoint del docid en la URL del manifest
+    if manifest_url:
+        docid_match = re.search(r'docid=https?%3A%2F%2F([^%&/]+)', manifest_url)
+        if docid_match:
+            sp_domain = docid_match.group(1)
+            session.headers["Origin"] = f"https://{sp_domain}"
+            session.headers["Referer"] = f"https://{sp_domain}/"
     if token:
         token = token.strip()
         # Soportar tanto Bearer como x-spopactoken
@@ -396,7 +401,7 @@ def run_download(download_id, manifest_url, quality, token=None, cookies_path=No
         info["log"].append(f"Token: {'sí' if token else 'no'}")
         info["log"].append(f"Cookies: {'sí' if cookies_path else 'no'}")
 
-        session = create_session(token, cookies_path)
+        session = create_session(token, cookies_path, manifest_url)
         info["log"].append(f"Cookies en sesión: {len(session.cookies)}")
 
         # 1. Descargar manifest — usar URL completa tal cual
